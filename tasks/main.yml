@@ -61,9 +61,6 @@
   delegate_to: "{{ groups[flannel_etcd_group][0] }}"
 
 
-- debug:
-    msg: "{{hostvars[groups[flannel_etcd_group][0]]['ansible_default_ipv4']}}"
-
 ## Configuration
 
 - name: Set Flannel config file directory for Ubuntu
