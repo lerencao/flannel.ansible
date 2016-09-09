@@ -45,13 +45,18 @@ flannel_backend: vxlan
 # "{% for node in groups['etcd'] %}http://{{ node }}:2379{% if not loop.last %},{% endif %}{% endfor %}"
 flannel_etcd_endpoints: "{% for node in groups[flannel_etcd_group] %}http://{{ hostvars[node]['ansible_default_ipv4'].address }}:2379{% if not loop.last %},{% endif %}{% endfor %}"
 
-# Any additional options that you want to pass, example:
-"--iface=eth1".
+# Any additional options that you want to pass, example: "--iface=eth1".
 # By default, we just add a good guess for the network interface on Vbox.  Otherwise, Flannel will probably make the right guess.
 flannel_opts: ''
 ```
 
+**notes**
+
+If `docker_config_file` was passed, flannel will config docker to use
+flannel network, and restart docker.
+
 Dependencies
+----------------
 
 `etcd.ansible`
 
@@ -61,6 +66,9 @@ Example Playbook
 ----------------
 
 ``` yaml
+- hosts: docker
+  roles:
+    - role: docker
 - hosts: servers
   roles:
     - role: etcd
@@ -75,6 +83,7 @@ Example Playbook
       flannel_etcd_group: etcd
       flannel_etcd_endpoints: "{% for node in groups[flannel_etcd_group] %}http://{{ hostvars[node].ansible_eth1.ipv4.address }}:2379{% if not loop.last %},{% endif %}{% endfor %}"
       flannel_opts: "-iface=eth1"
+      docker_config_file: /etc/default/docker
 ```
 
 License

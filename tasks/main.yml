@@ -74,7 +74,7 @@
 
 - name: Ensure config file directory exists
   file:
-    path: flannel_conf_dir
+    path: "{{ flannel_conf_dir }}"
     state: directory
 - name: Create flannel config file
   template:
@@ -84,7 +84,7 @@
     - restart flannel
 - name: Ensure upstart file directory exists
   file:
-    path: flannel_upstart_dir
+    path: "{{ flannel_upstart_dir }}"
     state: directory
 - name: Ensure flannel upstart script
   template:
@@ -95,7 +95,7 @@
 
 
 
-- name: Ubuntu | Configure Docker to use Flannel network
+- name: Configure Docker to use Flannel network
   lineinfile:
        dest: "{{ docker_config_file }}"
        state: present
@@ -107,7 +107,7 @@
     - line: 'DOCKER_OPTS="--bip ${FLANNEL_SUBNET} --mtu ${FLANNEL_MTU}"'
       regexp: '^DOCKER_OPTS='
   notify:
-    - restart flannel
+    - restart docker
   when: docker_config_file is defined
 
 
@@ -134,7 +134,7 @@
 # - name: Save iptables rules
 #   command: service iptables save
 
-- name: Enable flannel
+- name: Enable flannel started and will start on boot
   service:
     name: flanneld
     enabled: yes
