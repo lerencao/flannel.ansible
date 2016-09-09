@@ -1,0 +1,149 @@
+---
+# tasks file for flannel
+
+## Install
+
+- name: Copy tar file to remote host
+  copy:
+    src: "{{ flannel_release_dir }}/flannel-v{{ flannel_version }}-linux-amd64.tar.gz"
+    dest: "{{ ansible_temp_dir }}/flannel-v{{ flannel_version }}-linux-amd64.tar.gz"
+  tags:
+    - install
+
+
+- set_fact:
+    flannel_target_dir: /usr/local/flannel-v{{ flannel_version }}-linux-amd64
+- name: Ensure target dir exists
+  file:
+    path: "{{ flannel_target_dir }}"
+    state: directory
+- name: Extract release tar file
+  unarchive:
+    src: "{{ ansible_temp_dir }}/flannel-v{{ flannel_version }}-linux-amd64.tar.gz"
+    dest: "{{ flannel_target_dir }}"
+    copy: no
+  tags:
+    - install
+- name: Create symlinks
+  file:
+    src: "{{ flannel_target_dir }}/{{ item }}"
+    dest: /usr/bin/{{ item }}
+    state: link
+  with_items:
+    - flanneld
+    - mk-docker-opts.sh
+  notify:
+    - restart flannel
+  tags:
+    - install
+
+# Prepare and write Flannel configuration to etcd.
+- name: Set facts about etcdctl command
+  set_fact:
+    flannel_conf_file: "/tmp/flannel-conf.json"
+    flannel_conf_loc: "/{{ flannel_cluster_name }}/network/config"
+  run_once: true
+  delegate_to: "{{ groups[flannel_etcd_group][0] }}"
+
+- name: Create flannel config file to go in etcd
+  template: src=flannel-conf.json.j2 dest={{ flannel_conf_file }}
+  run_once: true
+  delegate_to: "{{ groups[flannel_etcd_group][0] }}"
+
+- name: Load the flannel config file into etcd
+  shell: "etcdctl set {{ flannel_conf_loc }} < {{ flannel_conf_file }}"
+  run_once: true
+  delegate_to: "{{ groups[flannel_etcd_group][0] }}"
+
+- name: Clean up the flannel config file
+  file: path={{ flannel_conf_file }} state=absent
+  run_once: true
+  delegate_to: "{{ groups[flannel_etcd_group][0] }}"
+
+
+- debug:
+    msg: "{{hostvars[groups[flannel_etcd_group][0]]['ansible_default_ipv4']}}"
+
+## Configuration
+
+- name: Set Flannel config file directory for Ubuntu
+  set_fact:
+    flannel_conf_dir: "/etc/flannel"
+    flannel_upstart_dir: "/etc/init"
+    flannel_subnet_file: /run/flannel/subnet.env
+
+- name: Ensure config file directory exists
+  file:
+    path: flannel_conf_dir
+    state: directory
+- name: Create flannel config file
+  template:
+    src: flanneld.j2
+    dest: "{{ flannel_conf_dir }}/flanneld"
+  notify:
+    - restart flannel
+- name: Ensure upstart file directory exists
+  file:
+    path: flannel_upstart_dir
+    state: directory
+- name: Ensure flannel upstart script
+  template:
+    src: flanneld.upstart
+    dest: "{{ flannel_upstart_dir }}/flanneld.conf"
+  notify:
+    - restart flannel
+
+
+
+- name: Ubuntu | Configure Docker to use Flannel network
+  lineinfile:
+       dest: "{{ docker_config_file }}"
+       state: present
+       line: "{{ item.line }}"
+       regexp: "{{ item.regexp }}"
+  with_items:
+    - line: ". {{ flannel_subnet_file }}"
+      regexp: ". {{ flannel_subnet_file }}"
+    - line: 'DOCKER_OPTS="--bip ${FLANNEL_SUBNET} --mtu ${FLANNEL_MTU}"'
+      regexp: '^DOCKER_OPTS='
+  notify:
+    - restart flannel
+  when: docker_config_file is defined
+
+
+# TODO: take care the iptables part.
+# - name: Get iptables rules
+#   command: iptables -L --wait
+#   register: iptablesrules
+#   always_run: yes
+
+# - name: Enable iptables at boot
+#   service: name=iptables enabled=yes state=started
+
+# - name: Open vxlan port with iptables
+#   command: /sbin/iptables -I INPUT 1 -p udp --dport 8472
+#            -j ACCEPT -m comment --comment "vxlan"
+
+# - name: Allow flanneld subnet traffic with iptables
+#   command: /sbin/iptables -I FORWARD 1 -i flannel.1
+#            -j ACCEPT -m comment --comment "flannel subnet"
+
+# - name: Allow DNATed packets through to flanneld
+#   command: /sbin/iptables -I FORWARD 1 -o flannel.1 -j ACCEPT -m comment --comment "flannel subnet"
+
+# - name: Save iptables rules
+#   command: service iptables save
+
+- name: Enable flannel
+  service:
+    name: flanneld
+    enabled: yes
+    state: started
+
+# - name: Start flannel
+#   service: name=flanneld state=started
+#   register: flannel_started
+#   notify:
+#     - restart docker
+
+
